@@ -4,7 +4,7 @@ from datetime import datetime
 import requests
 import flet as ft
 
-# Backend API URL (pulled from environment variable on Render, defaults to fallback backend)
+# Your actual Flask Backend API URL
 RENDER_API_URL = os.getenv("RENDER_API_URL", "https://expiry-date-tracker.onrender.com")
 
 def main(page: ft.Page):
@@ -25,7 +25,7 @@ def main(page: ft.Page):
         b64_str = base64.b64encode(image_bytes).decode("utf-8")
         endpoint = f"{RENDER_API_URL}/ocr/name" if scan_type == "name" else f"{RENDER_API_URL}/ocr/date"
         
-        status_label.value = f"Processing {scan_type} via Render Cloud API..."
+        status_label.value = f"Processing {scan_type} via Cloud API..."
         status_label.color = ft.Colors.AMBER_800
         page.update()
 
@@ -41,14 +41,14 @@ def main(page: ft.Page):
                     status_label.value = f"Scanned Date: {data.get('expiry_date', '')}"
                 status_label.color = ft.Colors.GREEN_700
             else:
-                status_label.value = "Error processing image on Cloud API."
+                status_label.value = f"Error processing image (Status {resp.status_code})."
                 status_label.color = ft.Colors.RED_600
         except Exception as ex:
             status_label.value = f"Fetch Error: {type(ex).__name__} - {ex}"
             status_label.color = ft.Colors.RED_600
         page.update()
 
-    async def on_picker_result(e: ft.FilePickerResultEvent, scan_type: str):
+    def on_picker_result(e: ft.FilePickerResultEvent, scan_type: str):
         if not e.files or len(e.files) == 0:
             return
         
@@ -59,7 +59,6 @@ def main(page: ft.Page):
             with open(uf.path, "rb") as f:
                 process_remote_ocr(f.read(), scan_type)
 
-    # FilePicker setup bound directly without page.overlay appending
     file_picker = ft.FilePicker()
     page.services.append(file_picker) if hasattr(page, "services") else None
 
@@ -100,7 +99,7 @@ def main(page: ft.Page):
         except Exception as ex:
             print(f"Delete error: {ex}")
 
-    def refresh_item_list():
+    def refresh_item_list(e=None):
         items_list_view.controls.clear()
         today = datetime.now().date()
         
@@ -165,7 +164,7 @@ def main(page: ft.Page):
                 status_label.color = ft.Colors.RED_600
 
         except Exception as ex:
-            status_label.value = f"Connection Failed: {type(ex).__name__} -> {ex}"
+            status_label.value = f"Connection Error: {type(ex).__name__}"
             status_label.color = ft.Colors.RED_600
 
         page.update()
@@ -177,7 +176,7 @@ def main(page: ft.Page):
     header = ft.Row(
         controls=[
             ft.Text("Expiry Scanner", size=24, weight=ft.FontWeight.BOLD),
-            ft.IconButton(icon=ft.Icons.REFRESH, on_click=lambda _: refresh_item_list())
+            ft.IconButton(icon=ft.Icons.REFRESH, on_click=refresh_item_list)
         ],
         alignment=ft.MainAxisAlignment.SPACE_BETWEEN
     )
@@ -204,9 +203,10 @@ def main(page: ft.Page):
         items_list_view
     )
 
+    # Initial data load trigger
     refresh_item_list()
 
-# Expose app instance for Gunicorn/Uvicorn on Render
+# Correct Flet ASGI export syntax
 app = ft.app(target=main, export_asgi_app=True)
 
 if __name__ == "__main__":
