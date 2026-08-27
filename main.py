@@ -4,20 +4,13 @@ from datetime import datetime
 import requests
 import flet as ft
 
-# Replace with your deployed Render URL after Step 6
+# Backend API URL (pulled from environment variable on Render, defaults to fallback backend)
 RENDER_API_URL = os.getenv("RENDER_API_URL", "https://expiry-date-tracker.onrender.com")
 
 def main(page: ft.Page):
-    # Initialize and append FilePicker FIRST
-    file_picker = ft.FilePicker()
-    page.overlay.append(file_picker)
-    page.update()
-
     page.title = "Expiry Scanner"
     page.theme_mode = ft.ThemeMode.LIGHT
     page.padding = 16
-
-    is_desktop = page.platform in [ft.PagePlatform.WINDOWS, ft.PagePlatform.MACOS, ft.PagePlatform.LINUX]
 
     # --- Inputs & Controls ---
     name_input = ft.TextField(label="Item Name", hint_text="e.g., Whole Milk", expand=True)
@@ -25,9 +18,9 @@ def main(page: ft.Page):
     threshold_input = ft.TextField(value="3", label="Notify (X) days before expiry", keyboard_type=ft.KeyboardType.NUMBER, width=250)
     items_list_view = ft.ListView(expand=True, spacing=10)
     
-    status_label = ft.Text("Ready (Connected to Render API).", color=ft.Colors.GREY_600)
+    status_label = ft.Text("Ready.", color=ft.Colors.GREY_600)
 
-    # --- Native Mobile Image Picker Handlers ---
+    # --- OCR Handling ---
     def process_remote_ocr(image_bytes, scan_type):
         b64_str = base64.b64encode(image_bytes).decode("utf-8")
         endpoint = f"{RENDER_API_URL}/ocr/name" if scan_type == "name" else f"{RENDER_API_URL}/ocr/date"
@@ -41,11 +34,11 @@ def main(page: ft.Page):
             if resp.status_code == 200:
                 data = resp.json()
                 if scan_type == "name":
-                    name_input.value = data["name"]
-                    status_label.value = f"Scanned Name: {data['name']}"
+                    name_input.value = data.get("name", "")
+                    status_label.value = f"Scanned Name: {data.get('name', '')}"
                 else:
-                    date_input.value = data["expiry_date"]
-                    status_label.value = f"Scanned Date: {data['expiry_date']}"
+                    date_input.value = data.get("expiry_date", "")
+                    status_label.value = f"Scanned Date: {data.get('expiry_date', '')}"
                 status_label.color = ft.Colors.GREEN_700
             else:
                 status_label.value = "Error processing image on Cloud API."
@@ -55,12 +48,10 @@ def main(page: ft.Page):
             status_label.color = ft.Colors.RED_600
         page.update()
 
-    # Mobile File Picker Setup
     def on_picker_result(e: ft.FilePickerResultEvent, scan_type: str):
         if not e.files or len(e.files) == 0:
             return
         
-        # In web mode, use file upload bytes
         uf = e.files[0]
         if hasattr(uf, "bytes") and uf.bytes:
             process_remote_ocr(uf.bytes, scan_type)
@@ -68,13 +59,17 @@ def main(page: ft.Page):
             with open(uf.path, "rb") as f:
                 process_remote_ocr(f.read(), scan_type)
 
-    def trigger_scan_name(e):
-        file_picker.on_result = lambda res: on_picker_result(res, "name")
-        file_picker.pick_files(allow_multiple=False, file_type=ft.FilePickerFileType.IMAGE)
+    # FilePicker setup bound directly without page.overlay appending
+    file_picker = ft.FilePicker()
+    page.services.append(file_picker) if hasattr(page, "services") else None
 
-    def trigger_scan_date(e):
+    async def trigger_scan_name(e):
+        file_picker.on_result = lambda res: on_picker_result(res, "name")
+        await file_picker.pick_files(allow_multiple=False, file_type=ft.FilePickerFileType.IMAGE)
+
+    async def trigger_scan_date(e):
         file_picker.on_result = lambda res: on_picker_result(res, "date")
-        file_picker.pick_files(allow_multiple=False, file_type=ft.FilePickerFileType.IMAGE)
+        await file_picker.pick_files(allow_multiple=False, file_type=ft.FilePickerFileType.IMAGE)
 
     # --- API Inventory Handlers ---
     def handle_add_item(e):
@@ -161,7 +156,7 @@ def main(page: ft.Page):
                         )
                     )
         except Exception as ex:
-            status_label.value = f"Unable to fetch items from server."
+            status_label.value = "Unable to fetch items from server."
             status_label.color = ft.Colors.RED_600
 
         page.update()
@@ -203,12 +198,10 @@ def main(page: ft.Page):
     )
 
     refresh_item_list()
-    
-# For app deployment
+
+# Expose app instance for Gunicorn/Uvicorn on Render
 app = ft.app(target=main, export_asgi_app=True)
 
-# For local deployment
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     ft.run(main, view=ft.AppView.WEB_BROWSER, host="127.0.0.1", port=port)
-    
