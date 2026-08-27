@@ -5,9 +5,14 @@ import requests
 import flet as ft
 
 # Replace with your deployed Render URL after Step 6
-RENDER_API_URL = "https://expiry-date-tracker.onrender.com"
+RENDER_API_URL = os.getenv("RENDER_API_URL", "https://expiry-date-tracker.onrender.com")
 
 def main(page: ft.Page):
+    # Initialize and append FilePicker FIRST
+    file_picker = ft.FilePicker()
+    page.overlay.append(file_picker)
+    page.update()
+
     page.title = "Expiry Scanner"
     page.theme_mode = ft.ThemeMode.LIGHT
     page.padding = 16
@@ -62,9 +67,6 @@ def main(page: ft.Page):
         elif hasattr(uf, "path") and uf.path:
             with open(uf.path, "rb") as f:
                 process_remote_ocr(f.read(), scan_type)
-
-    file_picker = ft.FilePicker()
-    page.overlay.append(file_picker)
 
     def trigger_scan_name(e):
         file_picker.on_result = lambda res: on_picker_result(res, "name")
