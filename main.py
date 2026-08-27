@@ -48,7 +48,7 @@ def main(page: ft.Page):
             status_label.color = ft.Colors.RED_600
         page.update()
 
-    def on_picker_result(e: ft.FilePickerResultEvent, scan_type: str):
+    async def on_picker_result(e: ft.FilePickerResultEvent, scan_type: str):
         if not e.files or len(e.files) == 0:
             return
         
