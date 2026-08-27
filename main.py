@@ -110,11 +110,9 @@ def main(page: ft.Page):
             alert_limit = 3
 
         url = f"{RENDER_API_URL}/items"
-        print(f"Fetching from URL: {url}")
 
         try:
             resp = requests.get(url, timeout=10)
-            print(f"Response status: {resp.status_code}")
             
             if resp.status_code == 200:
                 rows = resp.json()
@@ -167,13 +165,10 @@ def main(page: ft.Page):
                 status_label.color = ft.Colors.RED_600
 
         except Exception as ex:
-            # THIS WILL PRINT THE EXACT EXCEPTION (e.g., ConnectionRefused, SSLError, 404)
             status_label.value = f"Connection Failed: {type(ex).__name__} -> {ex}"
             status_label.color = ft.Colors.RED_600
 
         page.update()
-        
-    threshold_input.on_change = lambda _: refresh_item_list()
 
     scan_name_btn = ft.IconButton(icon=ft.Icons.CAMERA_ALT, tooltip="Scan Item Name", icon_color=ft.Colors.TEAL_600, on_click=trigger_scan_name)
     scan_date_btn = ft.IconButton(icon=ft.Icons.CALENDAR_MONTH, tooltip="Scan Expiry Date", icon_color=ft.Colors.TEAL_600, on_click=trigger_scan_date)
