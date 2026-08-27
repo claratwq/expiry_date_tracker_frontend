@@ -44,7 +44,7 @@ def main(page: ft.Page):
                 status_label.value = "Error processing image on Cloud API."
                 status_label.color = ft.Colors.RED_600
         except Exception as ex:
-            status_label.value = f"API Error: {ex}"
+            status_label.value = f"Fetch Error: {type(ex).__name__} - {ex}"
             status_label.color = ft.Colors.RED_600
         page.update()
 
