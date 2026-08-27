@@ -1,3 +1,4 @@
 requests
 flet
 gunicorn
+uvicorn
