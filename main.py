@@ -203,7 +203,7 @@ def main(page: ft.Page):
     refresh_item_list()
     
 # For app deployment
-app = ft.app(target=main, export_asgi=True)
+app = ft.app(target=main, export_asgi_app=True)
 
 # For local deployment
 if __name__ == "__main__":
