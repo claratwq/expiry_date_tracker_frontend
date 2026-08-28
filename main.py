@@ -29,11 +29,14 @@ st.divider()
 st.subheader("Add New Item")
 
 # Dynamic Key Forces Camera Viewfinder to Reset After Each Snapshot
-camera_photo = st.camera_input("Take a photo of product or label", key=f"cam_{st.session_state['camera_key']}")
+uploaded_photo = st.file_uploader(
+    "Snap photo using back camera", 
+    type=["jpg", "png", "jpeg"],
+    key=f"cam_{st.session_state['camera_key']}"
+)
 
-if camera_photo:
-    img_bytes = camera_photo.getvalue()
-    # Add photo to queue and increment key to clear viewfinder
+if uploaded_photo:
+    img_bytes = uploaded_photo.getvalue()
     st.session_state["captured_photos"].append(img_bytes)
     st.session_state["camera_key"] += 1
     st.toast(f"Photo added to queue! Total: {len(st.session_state['captured_photos'])}", icon="📸")
