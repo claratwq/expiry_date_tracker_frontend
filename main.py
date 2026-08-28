@@ -13,7 +13,7 @@ st.title("🏷️ Expiry Scanner")
 if "scanned_name" not in st.session_state:
     st.session_state["scanned_name"] = ""
 if "scanned_date_type" not in st.session_state:
-    st.session_state["scanned_date_type"] = "Best Before"
+    st.session_state["scanned_date_type"] = "Expiry"
 if "scanned_date" not in st.session_state:
     st.session_state["scanned_date"] = ""
 if "captured_photos" not in st.session_state:
