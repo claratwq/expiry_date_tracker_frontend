@@ -208,7 +208,7 @@ def main(page: ft.Page):
 
 # Correct Flet ASGI export syntax
 app = ft.app(target=main, export_asgi_app=True,
-    web_renderer="html")
+    web_renderer=WebRenderer.HTML)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
