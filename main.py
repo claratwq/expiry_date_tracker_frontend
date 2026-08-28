@@ -3,6 +3,7 @@ import base64
 from datetime import datetime
 import requests
 import flet as ft
+from flet_core.types import WebRenderer
 
 # Your actual Flask Backend API URL
 RENDER_API_URL = os.getenv("RENDER_API_URL", "https://expiry-date-tracker.onrender.com")
@@ -208,7 +209,7 @@ def main(page: ft.Page):
 
 # Correct Flet ASGI export syntax
 app = ft.app(target=main, export_asgi_app=True,
-    web_renderer=ft.WebRenderer.HTML_AUTO)
+    web_renderer=WebRenderer.HTML)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
