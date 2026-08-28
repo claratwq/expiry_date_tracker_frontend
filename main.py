@@ -77,9 +77,9 @@ if st.button("➕ SAVE ITEM TO INVENTORY", type="primary", use_container_width=T
             )
             if resp.status_code == 201:
                 st.success(f"Added '{name_val}' successfully!")
-                # Reset inputs
                 st.session_state["scanned_name"] = ""
                 st.session_state["scanned_date"] = ""
+                st.cache_data.clear()  # Force cache refresh after adding
                 st.rerun()
             else:
                 st.error(f"Failed to add item ({resp.status_code}): {resp.text}")
@@ -88,13 +88,26 @@ if st.button("➕ SAVE ITEM TO INVENTORY", type="primary", use_container_width=T
 
 st.divider()
 
+# Add this cached fetcher at function level
+@st.cache_data(ttl=60)  # Caches inventory for 60 seconds unless cleared
+def fetch_inventory_items(api_url):
+    resp = requests.get(f"{api_url}/items", timeout=10)
+    return resp.status_code, resp.json() if resp.status_code == 200 else resp.text
+
 # --- Section 3: Tracked Inventory ---
-st.subheader("Tracked Inventory")
+col_inv_header, col_inv_ref = st.columns([4, 1])
+with col_inv_header:
+    st.subheader("Tracked Inventory")
+with col_inv_ref:
+    if st.button("🔄 Refresh"):
+        st.cache_data.clear()
+        st.rerun()
 
 try:
-    resp = requests.get(f"{RENDER_API_URL}/items", timeout=10)
-    if resp.status_code == 200:
-        rows = resp.json()
+    status_code, response_data = fetch_inventory_items(RENDER_API_URL)
+    
+    if status_code == 200:
+        rows = response_data
         today = datetime.now().date()
 
         if not rows:
@@ -113,15 +126,11 @@ try:
 
                 is_urgent = days_left <= alert_limit
                 
-                # Card Container
                 with st.container(border=True):
                     c1, c2, c3 = st.columns([1, 4, 1])
                     
                     with c1:
-                        if is_urgent:
-                            st.markdown("⚠️")
-                        else:
-                            st.markdown("✅")
+                        st.markdown("⚠️" if is_urgent else "✅")
                             
                     with c2:
                         st.markdown(f"**{name}**")
@@ -134,12 +143,16 @@ try:
                         if st.button("🗑️", key=f"del_{item_id}"):
                             try:
                                 del_resp = requests.delete(f"{RENDER_API_URL}/items/{item_id}", timeout=10)
-                                if del_resp.status_code == 200:
+                                if del_resp.status_code in (200, 204):
                                     st.toast(f"Deleted {name}", icon="🗑️")
+                                    st.cache_data.clear()  # Clear cache so list updates
                                     st.rerun()
                             except Exception as ex:
                                 st.error(f"Delete error: {ex}")
+    elif status_code == 429:
+        st.warning("Rate limit reached on Flask API. Waiting a few seconds before retrying...")
     else:
-        st.error(f"Failed to load items. Server returned status {resp.status_code}")
+        st.error(f"Failed to load items. Server returned status {status_code}: {response_data}")
+
 except Exception as ex:
-        st.error(f"Could not connect to backend API: {ex}")
+    st.error(f"Could not connect to backend API: {ex}")
