@@ -75,7 +75,7 @@ if st.session_state["captured_photos"]:
 
 # Item Entry Form
 name_val = st.text_input("Item Name", value=st.session_state["scanned_name"], placeholder="e.g., HL Chocolate Milk")
-date_type_val = st.radio("Date Type", ["Best Before", "Expiry"], index=0 if st.session_state["scanned_date_type"] == "Best Before" else 1, horizontal=True)
+date_type_val = st.radio("Date Type", ["Expiry", "Best Before"], index=0 if st.session_state["scanned_date_type"] == "Expiry" else 1, horizontal=True)
 date_val = st.text_input("Date (YYYY-MM-DD)", value=st.session_state["scanned_date"], placeholder="e.g., 2026-08-15")
 
 if st.button("➕ SAVE ITEM TO INVENTORY", type="primary", use_container_width=True):
@@ -95,7 +95,7 @@ if st.button("➕ SAVE ITEM TO INVENTORY", type="primary", use_container_width=T
             if resp.status_code == 201:
                 st.success(f"Added '{name_val}' successfully!")
                 st.session_state["scanned_name"] = ""
-                st.session_state["scanned_date_type"] = "Best Before"
+                st.session_state["scanned_date_type"] = "Expiry"
                 st.session_state["scanned_date"] = ""
                 st.session_state["captured_photos"] = []
                 st.cache_data.clear()
