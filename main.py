@@ -4,97 +4,90 @@ from datetime import datetime
 import requests
 import streamlit as st
 
-# Backend API Configuration
 RENDER_API_URL = os.getenv("RENDER_API_URL", "https://expiry-date-tracker.onrender.com")
 
 st.set_page_config(page_title="Expiry Scanner", page_icon="🏷️", layout="centered")
-
 st.title("🏷️ Expiry Scanner")
 
-# Initialize Session State Variables
 if "scanned_name" not in st.session_state:
     st.session_state["scanned_name"] = ""
+if "scanned_date_type" not in st.session_state:
+    st.session_state["scanned_date_type"] = "Best Before"
 if "scanned_date" not in st.session_state:
     st.session_state["scanned_date"] = ""
 
-# --- Helper Functions ---
-def process_ocr(image_bytes, scan_type):
-    b64_str = base64.b64encode(image_bytes).decode("utf-8")
-    endpoint = f"{RENDER_API_URL}/ocr/name" if scan_type == "name" else f"{RENDER_API_URL}/ocr/date"
+def process_llm_vision(files):
+    images_b64 = [base64.b64encode(f.getvalue()).decode("utf-8") for f in files]
     
     try:
-        with st.spinner(f"Processing {scan_type} via OCR..."):
-            resp = requests.post(endpoint, json={"image_b64": b64_str}, timeout=30)
+        with st.spinner("Analyzing photos with Gemini LLM..."):
+            resp = requests.post(f"{RENDER_API_URL}/analyze-label", json={"images_b64": images_b64}, timeout=30)
             if resp.status_code == 200:
                 data = resp.json()
-                if scan_type == "name":
-                    st.session_state["scanned_name"] = data.get("name", "")
-                    st.toast(f"Scanned Name: {st.session_state['scanned_name']}", icon="✅")
-                else:
-                    st.session_state["scanned_date"] = data.get("expiry_date", "")
-                    st.toast(f"Scanned Date: {st.session_state['scanned_date']}", icon="✅")
+                st.session_state["scanned_name"] = data.get("item_name", "")
+                st.session_state["scanned_date_type"] = data.get("date_type", "Best Before")
+                st.session_state["scanned_date"] = data.get("expiry_date", "") or ""
+                st.toast("Label analyzed successfully!", icon="✨")
             else:
-                st.error(f"OCR Error ({resp.status_code}): Could not process image.")
+                st.error(f"Analysis failed (Status {resp.status_code})")
     except Exception as ex:
-        st.error(f"OCR Request Failed: {ex}")
+        st.error(f"Request failed: {ex}")
 
-# --- Section 1: Settings & Threshold ---
-alert_limit = st.number_input("Notify (X) days before expiry", min_value=0, value=3, step=1)
-
+# --- Settings & Threshold ---
+alert_limit = st.number_input("Notify (X) days before date", min_value=0, value=3, step=1)
 st.divider()
 
 # --- Section 2: Scan & Add Item ---
 st.subheader("Add New Item")
 
-# Camera / Image Input
-camera_file = st.camera_input("Snap label or expiry date")
+uploaded_files = st.file_uploader(
+    "Snap/Upload photos of product & label", 
+    type=["jpg", "jpeg", "png"], 
+    accept_multiple_files=True
+)
 
-if camera_file:
-    col_ocr1, col_ocr2 = st.columns(2)
-    img_bytes = camera_file.getvalue()
-    
-    with col_ocr1:
-        if st.button("🔍 Scan Name from Photo", use_container_width=True):
-            process_ocr(img_bytes, "name")
-            
-    with col_ocr2:
-        if st.button("📅 Scan Date from Photo", use_container_width=True):
-            process_ocr(img_bytes, "date")
+if uploaded_files:
+    if st.button("🤖 Analyze Images with LLM", use_container_width=True, type="secondary"):
+        process_llm_vision(uploaded_files)
 
-# Item Entry Form
-name_val = st.text_input("Item Name", value=st.session_state["scanned_name"], placeholder="e.g., Whole Milk")
-date_val = st.text_input("Expiry Date (YYYY-MM-DD)", value=st.session_state["scanned_date"], placeholder="e.g., 2026-08-15")
+name_val = st.text_input("Item Name", value=st.session_state["scanned_name"], placeholder="e.g., HL Chocolate Milk")
+date_type_val = st.radio("Date Type", ["Best Before", "Expiry"], index=0 if st.session_state["scanned_date_type"] == "Best Before" else 1, horizontal=True)
+date_val = st.text_input("Date (YYYY-MM-DD)", value=st.session_state["scanned_date"], placeholder="e.g., 2026-08-15")
 
 if st.button("➕ SAVE ITEM TO INVENTORY", type="primary", use_container_width=True):
     if not name_val or not date_val:
-        st.warning("Please provide both item name and expiry date.")
+        st.warning("Please provide both item name and date.")
     else:
         try:
             resp = requests.post(
                 f"{RENDER_API_URL}/items",
-                json={"name": name_val.strip(), "expiry_date": date_val.strip()},
+                json={
+                    "name": name_val.strip(),
+                    "date_type": date_type_val,
+                    "expiry_date": date_val.strip()
+                },
                 timeout=10
             )
             if resp.status_code == 201:
                 st.success(f"Added '{name_val}' successfully!")
                 st.session_state["scanned_name"] = ""
+                st.session_state["scanned_date_type"] = "Best Before"
                 st.session_state["scanned_date"] = ""
-                st.cache_data.clear()  # Force cache refresh after adding
+                st.cache_data.clear()
                 st.rerun()
             else:
-                st.error(f"Failed to add item ({resp.status_code}): {resp.text}")
+                st.error(f"Failed to add item: {resp.text}")
         except Exception as ex:
             st.error(f"Connection error: {ex}")
 
 st.divider()
 
-# Add this cached fetcher at function level
-@st.cache_data(ttl=60)  # Caches inventory for 60 seconds unless cleared
+# --- Section 3: Tracked Inventory ---
+@st.cache_data(ttl=60)
 def fetch_inventory_items(api_url):
     resp = requests.get(f"{api_url}/items", timeout=10)
     return resp.status_code, resp.json() if resp.status_code == 200 else resp.text
 
-# --- Section 3: Tracked Inventory ---
 col_inv_header, col_inv_ref = st.columns([4, 1])
 with col_inv_header:
     st.subheader("Tracked Inventory")
@@ -116,6 +109,7 @@ try:
             for item in rows:
                 item_id = item["id"]
                 name = item["name"]
+                d_type = item.get("date_type", "Best Before")
                 exp_str = item["expiry_date"]
                 
                 try:
@@ -128,31 +122,18 @@ try:
                 
                 with st.container(border=True):
                     c1, c2, c3 = st.columns([1, 4, 1])
-                    
                     with c1:
                         st.markdown("⚠️" if is_urgent else "✅")
-                            
                     with c2:
                         st.markdown(f"**{name}**")
-                        if days_left < 0:
-                            st.caption(f"🚨 Expired! ({exp_str})")
-                        else:
-                            st.caption(f"{days_left} days left (Expires: {exp_str})")
-                            
+                        lbl = "Expired!" if days_left < 0 else f"{days_left} days left"
+                        st.caption(f"{lbl} ({d_type}: {exp_str})")
                     with c3:
                         if st.button("🗑️", key=f"del_{item_id}"):
-                            try:
-                                del_resp = requests.delete(f"{RENDER_API_URL}/items/{item_id}", timeout=10)
-                                if del_resp.status_code in (200, 204):
-                                    st.toast(f"Deleted {name}", icon="🗑️")
-                                    st.cache_data.clear()  # Clear cache so list updates
-                                    st.rerun()
-                            except Exception as ex:
-                                st.error(f"Delete error: {ex}")
-    elif status_code == 429:
-        st.warning("Rate limit reached on Flask API. Waiting a few seconds before retrying...")
-    else:
-        st.error(f"Failed to load items. Server returned status {status_code}: {response_data}")
-
+                            del_resp = requests.delete(f"{RENDER_API_URL}/items/{item_id}", timeout=10)
+                            if del_resp.status_code in (200, 204):
+                                st.toast(f"Deleted {name}", icon="🗑️")
+                                st.cache_data.clear()
+                                st.rerun()
 except Exception as ex:
     st.error(f"Could not connect to backend API: {ex}")
