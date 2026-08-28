@@ -3,7 +3,6 @@ import base64
 from datetime import datetime
 import requests
 import flet as ft
-from flet_core.types import WebRenderer
 
 # Your actual Flask Backend API URL
 RENDER_API_URL = os.getenv("RENDER_API_URL", "https://expiry-date-tracker.onrender.com")
