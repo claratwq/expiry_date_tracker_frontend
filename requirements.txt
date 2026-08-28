@@ -1,4 +1,4 @@
 requests
-flet
+flet==0.22.0
 gunicorn
 uvicorn
