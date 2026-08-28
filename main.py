@@ -207,7 +207,8 @@ def main(page: ft.Page):
     refresh_item_list()
 
 # Correct Flet ASGI export syntax
-app = ft.app(target=main, export_asgi_app=True)
+app = ft.app(target=main, export_asgi_app=True,
+    web_renderer=ft.WebRenderer.HTML)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
