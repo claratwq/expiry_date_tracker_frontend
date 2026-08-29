@@ -18,6 +18,20 @@ if "scanned_date" not in st.session_state:
     st.session_state["scanned_date"] = ""
 if "captured_photos" not in st.session_state:
     st.session_state["captured_photos"] = []
+if "inventory_items" not in st.session_state:
+    st.session_state["inventory_items"] = None
+
+def load_inventory():
+    try:
+        resp = requests.get(f"{RENDER_API_URL}/items", timeout=10)
+        if resp.status_code == 200:
+            st.session_state["inventory_items"] = resp.json()
+    except Exception as ex:
+        st.error(f"Failed to fetch inventory: {ex}")
+
+# Fetch inventory once on startup
+if st.session_state["inventory_items"] is None:
+    load_inventory()
 
 # --- Settings & Threshold ---
 alert_limit = st.number_input("Notify (X) days before date", min_value=0, value=3, step=1)
@@ -112,7 +126,7 @@ if st.session_state["captured_photos"]:
                         st.session_state["scanned_date"] = data.get("expiry_date", "") or ""
                         st.toast("Label analyzed successfully!", icon="✨")
                     elif resp.status_code == 429:
-                        st.error("Rate limit exceeded. Please wait a few seconds before retrying.")
+                        st.error("Rate limit reached. Please wait a few seconds.")
                     else:
                         st.error(f"Analysis failed (Status {resp.status_code})")
             except Exception as ex:
@@ -148,10 +162,10 @@ if st.button("➕ SAVE ITEM TO INVENTORY", type="primary", use_container_width=T
                 st.session_state["scanned_date_type"] = "Expiry"
                 st.session_state["scanned_date"] = ""
                 st.session_state["captured_photos"] = []
-                st.cache_data.clear()
+                load_inventory()
                 st.rerun()
             elif resp.status_code == 429:
-                st.error("Too Many Requests: Rate limit reached on server. Please wait 10 seconds before saving again.")
+                st.error("Too Many Requests: Wait 5 seconds before trying again.")
             else:
                 st.error(f"Failed to add item ({resp.status_code}): {resp.text}")
         except Exception as ex:
@@ -160,26 +174,17 @@ if st.button("➕ SAVE ITEM TO INVENTORY", type="primary", use_container_width=T
 st.divider()
 
 # --- Section 3: Tracked Inventory ---
-@st.cache_data(ttl=300)  # Increased TTL to 5 minutes to prevent hitting 429 rate limits
-def fetch_inventory_items(api_url):
-    try:
-        resp = requests.get(f"{api_url}/items", timeout=10)
-        return resp.status_code, resp.json() if resp.status_code == 200 else resp.text
-    except Exception as err:
-        return 500, str(err)
-
 col_inv_header, col_inv_ref = st.columns([4, 1])
 with col_inv_header:
     st.subheader("Tracked Inventory")
 with col_inv_ref:
     if st.button("🔄 Refresh"):
-        st.cache_data.clear()
+        load_inventory()
         st.rerun()
 
-status_code, response_data = fetch_inventory_items(RENDER_API_URL)
+rows = st.session_state.get("inventory_items")
 
-if status_code == 200:
-    rows = response_data
+if rows is not None:
     today = datetime.now().date()
 
     if not rows:
@@ -213,14 +218,9 @@ if status_code == 200:
                             del_resp = requests.delete(f"{RENDER_API_URL}/items/{item_id}", timeout=10)
                             if del_resp.status_code in (200, 204):
                                 st.toast(f"Deleted {name}", icon="🗑️")
-                                st.cache_data.clear()
+                                load_inventory()
                                 st.rerun()
-                            elif del_resp.status_code == 429:
-                                st.error("Rate limit reached while deleting.")
                         except Exception as ex:
                             st.error(f"Delete error: {ex}")
-
-elif status_code == 429:
-    st.warning("⚠️ Rate limit reached on server. Displaying cached inventory or waiting to reconnect...")
 else:
-    st.error(f"Failed to load items. Server status {status_code}: {response_data}")
+    st.info("Loading inventory...")
