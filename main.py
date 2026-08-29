@@ -29,26 +29,42 @@ st.divider()
 # --- Section 2: Scan & Add Item ---
 st.subheader("Add New Item")
 
-# Dynamic Key Forces Camera Viewfinder to Reset After Each Snapshot
+# 1. Check if a photo was captured from the iframe query params
+if "camera_snap" in st.query_params:
+    raw_b64 = st.query_params["camera_snap"]
+    # Clear query param immediately to avoid loop
+    del st.query_params["camera_snap"]
+    
+    try:
+        img_bytes = base64.b64decode(raw_b64)
+        st.session_state["captured_photos"].append(img_bytes)
+        st.toast(f"Photo added to queue! Total: {len(st.session_state['captured_photos'])}", icon="📸")
+        st.rerun()
+    except Exception as ex:
+        st.error(f"Failed to process image: {ex}")
 
-
-# Injected HTML/JS to stream back camera directly
-def back_camera_input(key=None):
-    html_code = """
-    <div style="display: flex; flex-direction: column; align-items: center; gap: 10px; font-family: sans-serif;">
-        <video id="video" autoplay playsinline style="width: 100%; max-width: 380px; border-radius: 10px; border: 2px solid #333; background: #000;"></video>
-        <button id="snap-btn" style="width: 100%; max-width: 380px; padding: 12px; font-size: 16px; font-weight: bold; color: white; background-color: #FF4B4B; border: none; border-radius: 8px; cursor: pointer;">
-            📸 Snap Photo (Rear Camera)
-        </button>
-        <canvas id="canvas" style="display:none;"></canvas>
-    </div>
+# 2. Render Single-Tap Rear Camera Iframe
+rear_camera_html = """
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { margin: 0; padding: 0; display: flex; flex-direction: column; align-items: center; font-family: sans-serif; }
+        video { width: 100%; max-width: 380px; border-radius: 10px; background: #000; }
+        button { width: 100%; max-width: 380px; margin-top: 8px; padding: 12px; font-size: 16px; font-weight: bold; color: white; background-color: #FF4B4B; border: none; border-radius: 8px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <video id="video" autoplay playsinline></video>
+    <button id="snap">📸 Snap Photo (Rear Camera)</button>
+    <canvas id="canvas" style="display:none;"></canvas>
 
     <script>
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
-        const snapBtn = document.getElementById('snap-btn');
+        const snap = document.getElementById('snap');
 
-        // Request Rear/Environment Camera
+        // Request Environment (Rear) Camera
         navigator.mediaDevices.getUserMedia({
             video: { facingMode: { ideal: "environment" } },
             audio: false
@@ -58,30 +74,28 @@ def back_camera_input(key=None):
             console.error("Camera access error:", err);
         });
 
-        // Function to notify Streamlit of new component value
-        function sendToStreamlit(value) {
-            window.parent.postMessage({
-                isStreamlitMessage: true,
-                type: "streamlit:setComponentValue",
-                value: value
-            }, "*");
-        }
-
-        snapBtn.addEventListener('click', () => {
+        snap.addEventListener('click', () => {
             const context = canvas.getContext('2d');
             canvas.width = video.videoWidth || 640;
             canvas.height = video.videoHeight || 480;
             context.drawImage(video, 0, 0, canvas.width, canvas.height);
             
-            // Get base64 string (without the data:image/jpeg;base64, prefix)
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-            const rawB64 = dataUrl.split(',')[1];
+            // Extract base64 image string
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+            const base64Str = dataUrl.split(',')[1];
             
-            sendToStreamlit(rawB64);
+            // Set query param on parent window to send image to Streamlit
+            const url = new URL(window.parent.location.href);
+            url.searchParams.set('camera_snap', base64Str);
+            window.parent.location.href = url.toString();
         });
     </script>
-    """
-    return components.html(html_code, height=320)
+</body>
+</html>
+"""
+
+# Render iframe using Streamlit's supported st.iframe (or html)
+st.components.v1.html(rear_camera_html, height=340)
 
 # --- Section 2: Scan & Add Item ---
 st.subheader("Add New Item")
