@@ -29,14 +29,55 @@ st.divider()
 st.subheader("Add New Item")
 
 # Dynamic Key Forces Camera Viewfinder to Reset After Each Snapshot
-uploaded_photo = st.file_uploader(
-    "Snap photo using back camera", 
-    type=["jpg", "png", "jpeg"],
-    key=f"cam_{st.session_state['camera_key']}"
-)
+import streamlit.components.v1 as components
 
-if uploaded_photo:
-    img_bytes = uploaded_photo.getvalue()
+# Injected HTML/JS to stream back camera directly
+back_camera_html = """
+<div style="display: flex; flex-direction: column; align-items: center; gap: 10px;">
+    <video id="video" width="100%" height="auto" autoplay playsinline style="border-radius: 8px; border: 1px solid #ccc; max-width: 400px;"></video>
+    <button id="snap" style="padding: 10px 20px; font-weight: bold; background-color: #ff4b4b; color: white; border: none; border-radius: 6px; cursor: pointer;">
+        📸 Take Photo (Rear Camera)
+    </button>
+    <canvas id="canvas" style="display:none;"></canvas>
+</div>
+
+<script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const snap = document.getElementById('snap');
+
+    // Force environment (rear/back) camera facing mode
+    navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+        audio: false
+    }).then(stream => {
+        video.srcObject = stream;
+    }).catch(err => {
+        console.error("Camera access error:", err);
+    });
+
+    snap.addEventListener('click', () => {
+        const context = canvas.getContext('2d');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+        
+        // Convert captured frame to base64 PNG data URL
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        
+        # Send dataUrl back to Streamlit or trigger download handler
+        window.parent.postMessage({type: "streamlit:setComponentValue", value: dataUrl}, "*");
+    });
+</script>
+"""
+
+# Render custom back-camera stream inside Streamlit
+captured_b64_image = components.html(back_camera_html, height=360)
+
+\
+if captured_b64_image:
+    img_bytes = captured_b64_image.getvalue()
+    # Add photo to queue and increment key to clear viewfinder
     st.session_state["captured_photos"].append(img_bytes)
     st.session_state["camera_key"] += 1
     st.toast(f"Photo added to queue! Total: {len(st.session_state['captured_photos'])}", icon="📸")
