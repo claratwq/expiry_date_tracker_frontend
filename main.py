@@ -28,7 +28,7 @@ if "last_photo_bytes" not in st.session_state:
     
 # Trigger automatically on app startup if inventory isn't loaded yet
 if st.session_state["inventory_items"] is None:
-    wake_and_load_inventory()
+    wake_and_load_inventory(RENDER_API_URL)
 
 # --- Settings & Threshold ---
 alert_limit = st.number_input("Notify (X) days before date", min_value=0, value=3, step=1)

@@ -1,6 +1,6 @@
 import time
 
-def wake_and_load_inventory(max_retries=10, delay_seconds=5):
+def wake_and_load_inventory(RENDER_API_URL, max_retries=10, delay_seconds=5):
     """Pings the Render backend to wake it from sleep and loads inventory."""
     url = f"{RENDER_API_URL}/items"
     
