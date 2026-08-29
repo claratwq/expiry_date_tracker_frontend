@@ -81,7 +81,7 @@ def back_camera_input(key=None):
         });
     </script>
     """
-    return components.html(html_code, height=320, key=key)
+    return components.html(html_code, height=320)
 
 # --- Section 2: Scan & Add Item ---
 st.subheader("Add New Item")
