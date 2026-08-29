@@ -90,7 +90,7 @@ st.subheader("Add New Item")
 camera_data_b64 = back_camera_input(key=f"cam_{st.session_state['camera_key']}")
 
 # When a photo is snapped, camera_data_b64 will contain the raw base64 string
-if camera_data_b64:
+if camera_data_b64 is not None:
     # Decode base64 directly into raw bytes
     img_bytes = base64.b64decode(camera_data_b64)
     
