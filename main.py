@@ -1,7 +1,6 @@
 import os
 import base64
 from datetime import datetime
-import time
 import requests
 import streamlit as st
 
@@ -19,8 +18,6 @@ if "scanned_date" not in st.session_state:
     st.session_state["scanned_date"] = ""
 if "captured_photos" not in st.session_state:
     st.session_state["captured_photos"] = []
-if "camera_key" not in st.session_state:
-    st.session_state["camera_key"] = 0
 
 # --- Settings & Threshold ---
 alert_limit = st.number_input("Notify (X) days before date", min_value=0, value=3, step=1)
@@ -29,18 +26,68 @@ st.divider()
 # --- Section 2: Scan & Add Item ---
 st.subheader("Add New Item")
 
-# Native Camera / File Uploader (Avoids heavy URL query parameters that trigger 429 errors)
-camera_photo = st.camera_input(
-    "Take a photo of product or label", 
-    key=f"cam_{st.session_state['camera_key']}"
-)
+# 1. Process snapped photo if URL parameter is detected
+if "camera_snap" in st.query_params:
+    raw_b64 = st.query_params["camera_snap"]
+    del st.query_params["camera_snap"]
+    
+    try:
+        img_bytes = base64.b64decode(raw_b64)
+        st.session_state["captured_photos"].append(img_bytes)
+        st.toast(f"Photo added to queue! Total: {len(st.session_state['captured_photos'])}", icon="📸")
+        st.rerun()
+    except Exception as ex:
+        st.error(f"Failed to process image: {ex}")
 
-if camera_photo is not None:
-    img_bytes = camera_photo.getvalue()
-    st.session_state["captured_photos"].append(img_bytes)
-    st.session_state["camera_key"] += 1
-    st.toast(f"Photo added to queue! Total: {len(st.session_state['captured_photos'])}", icon="📸")
-    st.rerun()
+# 2. Single-Tap Rear Camera Iframe
+rear_camera_html = """
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { margin: 0; padding: 0; display: flex; flex-direction: column; align-items: center; font-family: sans-serif; }
+        video { width: 100%; max-width: 380px; border-radius: 10px; background: #000; }
+        button { width: 100%; max-width: 380px; margin-top: 8px; padding: 12px; font-size: 16px; font-weight: bold; color: white; background-color: #FF4B4B; border: none; border-radius: 8px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <video id="video" autoplay playsinline></video>
+    <button id="snap">📸 Snap Photo (Rear Camera)</button>
+    <canvas id="canvas" style="display:none;"></canvas>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const snap = document.getElementById('snap');
+
+        navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: "environment" } },
+            audio: false
+        }).then(stream => {
+            video.srcObject = stream;
+        }).catch(err => {
+            console.error("Camera access error:", err);
+        });
+
+        snap.addEventListener('click', () => {
+            const context = canvas.getContext('2d');
+            canvas.width = video.videoWidth || 640;
+            canvas.height = video.videoHeight || 480;
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+            const base64Str = dataUrl.split(',')[1];
+            
+            const url = new URL(window.parent.location.href);
+            url.searchParams.set('camera_snap', base64Str);
+            window.parent.location.href = url.toString();
+        });
+    </script>
+</body>
+</html>
+"""
+
+st.components.v1.html(rear_camera_html, height=340)
 
 # Photo Queue & Action Buttons
 if st.session_state["captured_photos"]:
@@ -65,7 +112,7 @@ if st.session_state["captured_photos"]:
                         st.session_state["scanned_date"] = data.get("expiry_date", "") or ""
                         st.toast("Label analyzed successfully!", icon="✨")
                     elif resp.status_code == 429:
-                        st.error("Rate limit reached (429). Please wait a few seconds before trying again.")
+                        st.error("Rate limit exceeded. Please wait a few seconds before retrying.")
                     else:
                         st.error(f"Analysis failed (Status {resp.status_code})")
             except Exception as ex:
@@ -104,7 +151,7 @@ if st.button("➕ SAVE ITEM TO INVENTORY", type="primary", use_container_width=T
                 st.cache_data.clear()
                 st.rerun()
             elif resp.status_code == 429:
-                st.error("Server busy (Too Many Requests). Please wait 5 seconds and click Save again.")
+                st.error("Too Many Requests: Rate limit reached on server. Please wait 10 seconds before saving again.")
             else:
                 st.error(f"Failed to add item ({resp.status_code}): {resp.text}")
         except Exception as ex:
@@ -113,13 +160,13 @@ if st.button("➕ SAVE ITEM TO INVENTORY", type="primary", use_container_width=T
 st.divider()
 
 # --- Section 3: Tracked Inventory ---
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=300)  # Increased TTL to 5 minutes to prevent hitting 429 rate limits
 def fetch_inventory_items(api_url):
     try:
         resp = requests.get(f"{api_url}/items", timeout=10)
         return resp.status_code, resp.json() if resp.status_code == 200 else resp.text
-    except Exception as e:
-        return 500, str(e)
+    except Exception as err:
+        return 500, str(err)
 
 col_inv_header, col_inv_ref = st.columns([4, 1])
 with col_inv_header:
@@ -139,8 +186,8 @@ if status_code == 200:
         st.info("No items in inventory.")
     else:
         for item in rows:
-            item_id = item.get("id")
-            name = item.get("name", "Unknown Item")
+            item_id = item["id"]
+            name = item["name"]
             d_type = item.get("date_type") or "Expiry"
             exp_str = item.get("expiry_date", "")
             
@@ -168,12 +215,12 @@ if status_code == 200:
                                 st.toast(f"Deleted {name}", icon="🗑️")
                                 st.cache_data.clear()
                                 st.rerun()
+                            elif del_resp.status_code == 429:
+                                st.error("Rate limit reached while deleting.")
                         except Exception as ex:
                             st.error(f"Delete error: {ex}")
+
 elif status_code == 429:
-    st.warning("⏳ API rate limit reached. Waiting a few seconds before retrying...")
-    time.sleep(3)
-    st.cache_data.clear()
-    st.rerun()
+    st.warning("⚠️ Rate limit reached on server. Displaying cached inventory or waiting to reconnect...")
 else:
-    st.error(f"Could not load items (Status {status_code}): {response_data}")
+    st.error(f"Failed to load items. Server status {status_code}: {response_data}")
