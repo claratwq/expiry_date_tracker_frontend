@@ -3,6 +3,8 @@ import base64
 from datetime import datetime
 import requests
 import streamlit as st
+from wakebackend import wake_and_load_inventory
+
 
 RENDER_API_URL = os.getenv("RENDER_API_URL", "https://expiry-date-tracker.onrender.com")
 
@@ -23,17 +25,10 @@ if "inventory_items" not in st.session_state:
 if "last_photo_bytes" not in st.session_state:
     st.session_state["last_photo_bytes"] = None
 
-def load_inventory():
-    try:
-        resp = requests.get(f"{RENDER_API_URL}/items", timeout=10)
-        if resp.status_code == 200:
-            st.session_state["inventory_items"] = resp.json()
-    except Exception as ex:
-        st.error(f"Failed to fetch inventory: {ex}")
-
-# Fetch inventory once on startup
+    
+# Trigger automatically on app startup if inventory isn't loaded yet
 if st.session_state["inventory_items"] is None:
-    load_inventory()
+    wake_and_load_inventory()
 
 # --- Settings & Threshold ---
 alert_limit = st.number_input("Notify (X) days before date", min_value=0, value=3, step=1)
@@ -161,7 +156,7 @@ with col_inv_header:
     st.subheader("Tracked Inventory")
 with col_inv_ref:
     if st.button("🔄 Refresh"):
-        load_inventory()
+        wake_and_load_inventory()
         st.rerun()
 
 rows = st.session_state.get("inventory_items")
