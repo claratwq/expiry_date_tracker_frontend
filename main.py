@@ -3,7 +3,6 @@ import base64
 from datetime import datetime
 import requests
 import streamlit as st
-import streamlit.components.v1 as components
 
 RENDER_API_URL = os.getenv("RENDER_API_URL", "https://expiry-date-tracker.onrender.com")
 
@@ -19,8 +18,6 @@ if "scanned_date" not in st.session_state:
     st.session_state["scanned_date"] = ""
 if "captured_photos" not in st.session_state:
     st.session_state["captured_photos"] = []
-if "camera_key" not in st.session_state:
-    st.session_state["camera_key"] = 0
 
 # --- Settings & Threshold ---
 alert_limit = st.number_input("Notify (X) days before date", min_value=0, value=3, step=1)
@@ -29,10 +26,10 @@ st.divider()
 # --- Section 2: Scan & Add Item ---
 st.subheader("Add New Item")
 
-# 1. Check if a photo was captured from the iframe query params
+# 1. Process snapped photo if URL parameter is detected
 if "camera_snap" in st.query_params:
     raw_b64 = st.query_params["camera_snap"]
-    # Clear query param immediately to avoid loop
+    # Remove parameter to prevent infinite loop on rerun
     del st.query_params["camera_snap"]
     
     try:
@@ -43,7 +40,7 @@ if "camera_snap" in st.query_params:
     except Exception as ex:
         st.error(f"Failed to process image: {ex}")
 
-# 2. Render Single-Tap Rear Camera Iframe
+# 2. Single-Tap Rear Camera Iframe
 rear_camera_html = """
 <!DOCTYPE html>
 <html>
@@ -64,7 +61,6 @@ rear_camera_html = """
         const canvas = document.getElementById('canvas');
         const snap = document.getElementById('snap');
 
-        // Request Environment (Rear) Camera
         navigator.mediaDevices.getUserMedia({
             video: { facingMode: { ideal: "environment" } },
             audio: false
@@ -80,11 +76,9 @@ rear_camera_html = """
             canvas.height = video.videoHeight || 480;
             context.drawImage(video, 0, 0, canvas.width, canvas.height);
             
-            // Extract base64 image string
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
             const base64Str = dataUrl.split(',')[1];
             
-            // Set query param on parent window to send image to Streamlit
             const url = new URL(window.parent.location.href);
             url.searchParams.set('camera_snap', base64Str);
             window.parent.location.href = url.toString();
@@ -94,36 +88,16 @@ rear_camera_html = """
 </html>
 """
 
-# Render iframe using Streamlit's supported st.iframe (or html)
 st.components.v1.html(rear_camera_html, height=340)
 
-# --- Section 2: Scan & Add Item ---
-st.subheader("Add New Item")
-
-# Render custom back-camera component
-camera_data_b64 = back_camera_input(key=f"cam_{st.session_state['camera_key']}")
-
-# When a photo is snapped, camera_data_b64 will contain the raw base64 string
-if camera_data_b64 is not None:
-    # Decode base64 directly into raw bytes
-    img_bytes = base64.b64decode(camera_data_b64)
-    
-    # Add bytes to queue and increment camera_key to reset video stream state
-    st.session_state["captured_photos"].append(img_bytes)
-    st.session_state["camera_key"] += 1
-    st.toast(f"Photo added to queue! Total: {len(st.session_state['captured_photos'])}", icon="📸")
-    st.rerun()
-
 # Photo Queue & Action Buttons
-# Render small 100px thumbnails in a scannable row
 if st.session_state["captured_photos"]:
     st.markdown(f"**Captured Photos Queue ({len(st.session_state['captured_photos'])}):**")
     
-    # Create up to 6 small thumbnail columns
     thumb_cols = st.columns(6)
     for idx, photo in enumerate(st.session_state["captured_photos"]):
         with thumb_cols[idx % 6]:
-            st.image(photo, width=100) # Sets explicit width in pixels
+            st.image(photo, width=100)
 
     btn_col1, btn_col2 = st.columns([3, 1])
     with btn_col1:
@@ -135,7 +109,7 @@ if st.session_state["captured_photos"]:
                     if resp.status_code == 200:
                         data = resp.json()
                         st.session_state["scanned_name"] = data.get("item_name", "")
-                        st.session_state["scanned_date_type"] = data.get("date_type", "Best Before")
+                        st.session_state["scanned_date_type"] = data.get("date_type", "Expiry")
                         st.session_state["scanned_date"] = data.get("expiry_date", "") or ""
                         st.toast("Label analyzed successfully!", icon="✨")
                     else:
@@ -209,7 +183,7 @@ try:
             for item in rows:
                 item_id = item["id"]
                 name = item["name"]
-                d_type = item.get("date_type", "Best Before")
+                d_type = item.get("date_type", "Expiry")
                 exp_str = item["expiry_date"]
                 
                 try:
