@@ -152,6 +152,10 @@ st.divider()
 col_inv_header, col_inv_ref = st.columns([4, 1])
 with col_inv_header:
     st.subheader("Tracked Inventory")
+    
+if st.session_state["inventory_items"] is None:    
+    wake_and_load_inventory(RENDER_API_URL)
+    
 with col_inv_ref:
     if st.button("🔄 Refresh"):
         wake_and_load_inventory(RENDER_API_URL)
