@@ -20,8 +20,8 @@ if "captured_photos" not in st.session_state:
     st.session_state["captured_photos"] = []
 if "inventory_items" not in st.session_state:
     st.session_state["inventory_items"] = None
-if "camera_key" not in st.session_state:
-    st.session_state["camera_key"] = 0
+if "last_photo_bytes" not in st.session_state:
+    st.session_state["last_photo_bytes"] = None
 
 def load_inventory():
     try:
@@ -42,73 +42,48 @@ st.divider()
 # --- Section 2: Scan & Add Item ---
 st.subheader("Add New Item")
 
-# Inject JS override to enforce environment (rear) camera facing mode on st.camera_input
+# Force Rear Camera via JS without breaking frame contexts
+st.components.v1.html("""
+    <script>
+        (function() {
+            try {
+                const target = window.parent || window;
+                if (!target.navigator || !target.navigator.mediaDevices) return;
+                
+                if (!target.__camera_patched) {
+                    const origGetUserMedia = target.navigator.mediaDevices.getUserMedia.bind(target.navigator.mediaDevices);
+                    target.navigator.mediaDevices.getUserMedia = function(constraints) {
+                        if (constraints && constraints.video) {
+                            if (typeof constraints.video === 'object') {
+                                constraints.video.facingMode = { ideal: "environment" };
+                            } else {
+                                constraints.video = { facingMode: { ideal: "environment" } };
+                            }
+                        }
+                        return origGetUserMedia(constraints);
+                    };
+                    target.__camera_patched = true;
+                }
+            } catch (e) {
+                console.error("Camera patch error:", e);
+            }
+        })();
+    </script>
+""", height=0)
 
-# 1. Custom JS/HTML Live Camera Component
-camera_html = """
-<div style="text-align: center; font-family: sans-serif;">
-    <video id="webcam" autoplay playsinline style="width: 100%; max-width: 500px; border-radius: 10px; background: #000;"></video>
-    <br>
-    <button id="snap" style="margin-top: 10px; padding: 10px 20px; font-size: 16px; background-color: #ff4b4b; color: white; border: none; border-radius: 5px; cursor: pointer; width: 100%; max-width: 500px;">
-        📸 Snap Photo
-    </button>
-    <canvas id="canvas" style="display:none;"></canvas>
-</div>
+# Native Camera Widget with STATIC key (prevents stream resets & permission re-prompts)
+camera_photo = st.camera_input("Take a photo of product or label", key="static_rear_camera")
 
-<script>
-    const video = document.getElementById('webcam');
-    const canvas = document.getElementById('canvas');
-    const snapBtn = document.getElementById('snap');
-
-    // Request continuous rear camera stream
-    navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: { ideal: "environment" } } 
-    })
-    .then(stream => {
-        video.srcObject = stream;
-    })
-    .catch(err => {
-        console.error("Camera access error:", err);
-    });
-
-    snapBtn.addEventListener('click', () => {
-        const context = canvas.getContext('2d');
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
-        
-        // Convert captured frame to base64 JPEG
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-        
-        // Post frame to Streamlit's internal iframe listener
-        window.parent.postMessage({
-            type: 'streamlit:setComponentValue',
-            value: dataUrl
-        }, '*');
-    });
-</script>
-"""
-
-# Render custom live camera widget
-captured_b64 = st.components.v1.html(camera_html, height=360)
-
-# Process snap event without reloading/resetting the camera stream
-if captured_b64:
-    # Remove metadata header (e.g. "data:image/jpeg;base64,")
-    if "," in captured_b64:
-        header, encoded = captured_b64.split(",", 1)
-        img_bytes = base64.b64decode(encoded)
-    else:
-        img_bytes = base64.b64decode(captured_b64)
-        
-    # Append unique frame to queue
-    if "last_snap" not in st.session_state or st.session_state["last_snap"] != captured_b64:
+if camera_photo is not None:
+    img_bytes = camera_photo.getvalue()
+    
+    # Deduplicate frame captures across Streamlit reruns
+    if st.session_state["last_photo_bytes"] != img_bytes:
         st.session_state["captured_photos"].append(img_bytes)
-        st.session_state["last_snap"] = captured_b64
+        st.session_state["last_photo_bytes"] = img_bytes
         st.toast(f"Photo added to queue! Total: {len(st.session_state['captured_photos'])}", icon="📸")
-        st.rerun()
 
-# 2. Photo Queue & Action Buttons
+# Photo Queue & Action Buttons
 if st.session_state["captured_photos"]:
     st.markdown(f"**Captured Photos Queue ({len(st.session_state['captured_photos'])}):**")
     
@@ -140,6 +115,7 @@ if st.session_state["captured_photos"]:
     with btn_col2:
         if st.button("🗑️ Clear Queue", use_container_width=True):
             st.session_state["captured_photos"] = []
+            st.session_state["last_photo_bytes"] = None
             st.rerun()
 
 # Item Entry Form
@@ -167,6 +143,7 @@ if st.button("➕ SAVE ITEM TO INVENTORY", type="primary", use_container_width=T
                 st.session_state["scanned_date_type"] = "Expiry"
                 st.session_state["scanned_date"] = ""
                 st.session_state["captured_photos"] = []
+                st.session_state["last_photo_bytes"] = None
                 load_inventory()
                 st.rerun()
             elif resp.status_code == 429:
