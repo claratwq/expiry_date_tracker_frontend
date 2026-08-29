@@ -20,6 +20,8 @@ if "captured_photos" not in st.session_state:
     st.session_state["captured_photos"] = []
 if "inventory_items" not in st.session_state:
     st.session_state["inventory_items"] = None
+if "camera_key" not in st.session_state:
+    st.session_state["camera_key"] = 0
 
 def load_inventory():
     try:
@@ -40,96 +42,35 @@ st.divider()
 # --- Section 2: Scan & Add Item ---
 st.subheader("Add New Item")
 
-# Process base64 data received from iframe postMessage
-if "camera_snap" in st.query_params:
-    raw_b64 = st.query_params["camera_snap"]
-    del st.query_params["camera_snap"]
-    try:
-        img_bytes = base64.b64decode(raw_b64)
-        st.session_state["captured_photos"].append(img_bytes)
-        st.toast(f"Photo added to queue! Total: {len(st.session_state['captured_photos'])}", icon="📸")
-        st.rerun()
-    except Exception as ex:
-        st.error(f"Failed to process image: {ex}")
-
-rear_camera_html = """
-<!DOCTYPE html>
-<html>
-<head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        * { box-sizing: border-box; }
-        body { margin: 0; padding: 0; display: flex; flex-direction: column; align-items: center; font-family: sans-serif; background: transparent; }
-        #video { width: 100%; max-width: 380px; height: 220px; object-fit: cover; border-radius: 10px; background: #000; }
-        #snap { width: 100%; max-width: 380px; margin-top: 8px; padding: 12px; font-size: 16px; font-weight: bold; color: white; background-color: #FF4B4B; border: none; border-radius: 8px; cursor: pointer; }
-        #status { font-size: 12px; color: #888; margin-top: 4px; text-align: center; }
-    </style>
-</head>
-<body>
-    <video id="video" autoplay playsinline muted></video>
-    <button id="snap" type="button">📸 Snap Photo (Rear Camera)</button>
-    <div id="status">Starting camera...</div>
-    <canvas id="canvas" style="display:none;"></canvas>
-
+# Inject JS override to enforce environment (rear) camera facing mode on st.camera_input
+st.components.v1.html("""
     <script>
-        const video = document.getElementById('video');
-        const canvas = document.getElementById('canvas');
-        const snap = document.getElementById('snap');
-        const status = document.getElementById('status');
-
-        // Fallback constraint logic: try rear camera first, fallback to user camera for laptops
-        async function startCamera() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: { ideal: "environment" } },
-                    audio: false
-                });
-                video.srcObject = stream;
-                status.innerText = "Camera active";
-            } catch (err) {
-                console.warn("Rear camera error, attempting default camera:", err);
-                try {
-                    const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-                    video.srcObject = fallbackStream;
-                    status.innerText = "Front/Default Camera Active";
-                } catch (fallbackErr) {
-                    status.innerText = "Camera access denied or unavailable";
-                    console.error("Camera access failed:", fallbackErr);
+        const originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+        navigator.mediaDevices.getUserMedia = function(constraints) {
+            if (constraints && constraints.video) {
+                if (typeof constraints.video === 'object') {
+                    constraints.video.facingMode = { ideal: "environment" };
+                } else {
+                    constraints.video = { facingMode: { ideal: "environment" } };
                 }
             }
-        }
-
-        startCamera();
-
-        snap.addEventListener('click', () => {
-            if (!video.srcObject) {
-                alert("Camera is not active yet.");
-                return;
-            }
-            const context = canvas.getContext('2d');
-            canvas.width = video.videoWidth || 640;
-            canvas.height = video.videoHeight || 480;
-            context.drawImage(video, 0, 0, canvas.width, canvas.height);
-            
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-            const base64Str = dataUrl.split(',')[1];
-            
-            // Safe cross-origin window navigation
-            try {
-                const url = new URL(window.top.location.href);
-                url.searchParams.set('camera_snap', base64Str);
-                window.top.location.href = url.toString();
-            } catch (e) {
-                // Secondary fallback if window.top is sandboxed
-                window.parent.postMessage({ type: 'camera_snap', b64: base64Str }, '*');
-            }
-        });
+            return originalGetUserMedia(constraints);
+        };
     </script>
-</body>
-</html>
-"""
+""", height=0)
 
-st.components.v1.html(rear_camera_html, height=300)
+# Streamlit Native Camera Widget (with camera_key reset mechanism)
+camera_photo = st.camera_input(
+    "Take a photo of product or label", 
+    key=f"cam_{st.session_state['camera_key']}"
+)
+
+if camera_photo is not None:
+    img_bytes = camera_photo.getvalue()
+    st.session_state["captured_photos"].append(img_bytes)
+    st.session_state["camera_key"] += 1
+    st.toast(f"Photo added to queue! Total: {len(st.session_state['captured_photos'])}", icon="📸")
+    st.rerun()
 
 # Photo Queue & Action Buttons
 if st.session_state["captured_photos"]:
