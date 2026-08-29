@@ -26,9 +26,7 @@ if "last_photo_bytes" not in st.session_state:
     st.session_state["last_photo_bytes"] = None
 
     
-# Trigger automatically on app startup if inventory isn't loaded yet
-if st.session_state["inventory_items"] is None:
-    wake_and_load_inventory(RENDER_API_URL)
+
 
 # --- Settings & Threshold ---
 alert_limit = st.number_input("Notify (X) days before date", min_value=0, value=3, step=1)
@@ -156,7 +154,7 @@ with col_inv_header:
     st.subheader("Tracked Inventory")
 with col_inv_ref:
     if st.button("🔄 Refresh"):
-        wake_and_load_inventory()
+        wake_and_load_inventory(RENDER_API_URL)
         st.rerun()
 
 rows = st.session_state.get("inventory_items")
