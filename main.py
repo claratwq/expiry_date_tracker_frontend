@@ -183,7 +183,7 @@ try:
             for item in rows:
                 item_id = item["id"]
                 name = item["name"]
-                d_type = item.get("date_type", "Expiry")
+                d_type = item.get("date_type", "Best Before")
                 exp_str = item["expiry_date"]
                 
                 try:
