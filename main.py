@@ -45,17 +45,34 @@ st.subheader("Add New Item")
 # Inject JS override to enforce environment (rear) camera facing mode on st.camera_input
 st.components.v1.html("""
     <script>
-        const originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
-        navigator.mediaDevices.getUserMedia = function(constraints) {
-            if (constraints && constraints.video) {
-                if (typeof constraints.video === 'object') {
-                    constraints.video.facingMode = { ideal: "environment" };
-                } else {
-                    constraints.video = { facingMode: { ideal: "environment" } };
-                }
+        (function() {
+            try {
+                // Target parent window mediaDevices if inside an iframe
+                const targetWindow = window.parent || window;
+                if (!targetWindow.navigator || !targetWindow.navigator.mediaDevices) return;
+
+                const originalGetUserMedia = targetWindow.navigator.mediaDevices.getUserMedia.bind(targetWindow.navigator.mediaDevices);
+                
+                targetWindow.navigator.mediaDevices.getUserMedia = function(constraints) {
+                    if (constraints && constraints.video) {
+                        if (typeof constraints.video === 'object') {
+                            constraints.video.facingMode = { exact: "environment" };
+                        } else {
+                            constraints.video = { facingMode: { exact: "environment" } };
+                        }
+                    }
+                    return originalGetUserMedia(constraints).catch(err => {
+                        // Fallback to 'ideal' or default camera if 'exact' environment camera fails (e.g. on laptops)
+                        if (typeof constraints.video === 'object') {
+                            constraints.video.facingMode = { ideal: "environment" };
+                        }
+                        return originalGetUserMedia(constraints);
+                    });
+                };
+            } catch (e) {
+                console.error("Camera override error:", e);
             }
-            return originalGetUserMedia(constraints);
-        };
+        })();
     </script>
 """, height=0)
 
