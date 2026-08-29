@@ -3,6 +3,7 @@ import base64
 from datetime import datetime
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 
 RENDER_API_URL = os.getenv("RENDER_API_URL", "https://expiry-date-tracker.onrender.com")
 
@@ -29,55 +30,71 @@ st.divider()
 st.subheader("Add New Item")
 
 # Dynamic Key Forces Camera Viewfinder to Reset After Each Snapshot
-import streamlit.components.v1 as components
+
 
 # Injected HTML/JS to stream back camera directly
-back_camera_html = """
-<div style="display: flex; flex-direction: column; align-items: center; gap: 10px;">
-    <video id="video" width="100%" height="auto" autoplay playsinline style="border-radius: 8px; border: 1px solid #ccc; max-width: 400px;"></video>
-    <button id="snap" style="padding: 10px 20px; font-weight: bold; background-color: #ff4b4b; color: white; border: none; border-radius: 6px; cursor: pointer;">
-        📸 Take Photo (Rear Camera)
-    </button>
-    <canvas id="canvas" style="display:none;"></canvas>
-</div>
+def back_camera_input(key=None):
+    html_code = """
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 10px; font-family: sans-serif;">
+        <video id="video" autoplay playsinline style="width: 100%; max-width: 380px; border-radius: 10px; border: 2px solid #333; background: #000;"></video>
+        <button id="snap-btn" style="width: 100%; max-width: 380px; padding: 12px; font-size: 16px; font-weight: bold; color: white; background-color: #FF4B4B; border: none; border-radius: 8px; cursor: pointer;">
+            📸 Snap Photo (Rear Camera)
+        </button>
+        <canvas id="canvas" style="display:none;"></canvas>
+    </div>
 
-<script>
-    const video = document.getElementById('video');
-    const canvas = document.getElementById('canvas');
-    const snap = document.getElementById('snap');
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const snapBtn = document.getElementById('snap-btn');
 
-    // Force environment (rear/back) camera facing mode
-    navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
-        audio: false
-    }).then(stream => {
-        video.srcObject = stream;
-    }).catch(err => {
-        console.error("Camera access error:", err);
-    });
+        // Request Rear/Environment Camera
+        navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: "environment" } },
+            audio: false
+        }).then(stream => {
+            video.srcObject = stream;
+        }).catch(err => {
+            console.error("Camera access error:", err);
+        });
 
-    snap.addEventListener('click', () => {
-        const context = canvas.getContext('2d');
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
-        
-        // Convert captured frame to base64 PNG data URL
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-        
-        # Send dataUrl back to Streamlit or trigger download handler
-        window.parent.postMessage({type: "streamlit:setComponentValue", value: dataUrl}, "*");
-    });
-</script>
-"""
+        // Function to notify Streamlit of new component value
+        function sendToStreamlit(value) {
+            window.parent.postMessage({
+                isStreamlitMessage: true,
+                type: "streamlit:setComponentValue",
+                value: value
+            }, "*");
+        }
 
-# Render custom back-camera stream inside Streamlit
-captured_b64_image = components.html(back_camera_html, height=360)
+        snapBtn.addEventListener('click', () => {
+            const context = canvas.getContext('2d');
+            canvas.width = video.videoWidth || 640;
+            canvas.height = video.videoHeight || 480;
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // Get base64 string (without the data:image/jpeg;base64, prefix)
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+            const rawB64 = dataUrl.split(',')[1];
+            
+            sendToStreamlit(rawB64);
+        });
+    </script>
+    """
+    return components.html(html_code, height=320, key=key)
 
-\
-if captured_b64_image:
-    img_bytes = captured_b64_image.getvalue()
-    # Add photo to queue and increment key to clear viewfinder
+# --- Section 2: Scan & Add Item ---
+st.subheader("Add New Item")
+
+# Render custom back-camera component
+camera_data_b64 = back_camera_input(key=f"cam_{st.session_state['camera_key']}")
+
+# When a photo is snapped, camera_data_b64 will contain the raw base64 string
+if camera_data_b64:
+    # Decode base64 directly into raw bytes
+    img_bytes = base64.b64decode(camera_data_b64)
+    
+    # Add bytes to queue and increment camera_key to reset video stream state
     st.session_state["captured_photos"].append(img_bytes)
     st.session_state["camera_key"] += 1
     st.toast(f"Photo added to queue! Total: {len(st.session_state['captured_photos'])}", icon="📸")
